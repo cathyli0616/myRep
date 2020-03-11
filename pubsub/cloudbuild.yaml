@@ -1,0 +1,87 @@
+steps:
+#descrypt service account key
+- name: "gcr.io/cloud-builders/gcloud"
+  id: decrypt-ssh-id
+  dir: ${_DIR}
+  args:
+  - kms
+  - decrypt
+  - --ciphertext-file=key/mygcp-test-project-001-f9b004e6a0b0_json_enc
+  - --plaintext-file=secret.json
+  - --location=global
+  - --keyring=mygcp-test-key-ring
+  - --key=mygcp-test-key
+  - --project=${_BUILDER_PROJECT}
+
+#copy key file to vm instance
+- name: "gcr.io/cloud-builders/gcloud"
+  id: copy-key
+  args: ["compute", "scp", "${_KEY_FILE}", 
+         "${_USER_NAME}@${_INSTANCE_NAME}:${_DESTINATION_DIR}/.ssh", 
+         "--project=${_BUILDER_PROJECT}", "--zone=${_ZONE}", 
+         "--ssh-key-file=${_SSH_KEY_PATH}"]
+
+#copy source file to vm instance
+- name: "gcr.io/cloud-builders/gcloud"
+  id: copy-source
+  args: ["compute", "scp", "--recurse", "${_SOURCE_DIR}", 
+         "${_USER_NAME}@${_INSTANCE_NAME}:${_DESTINATION_DIR}", 
+         "--project=${_BUILDER_PROJECT}", "--zone=${_ZONE}", 
+         "--ssh-key-file=${_SSH_KEY_PATH}"]
+
+# install python on vm instance
+- name: "gcr.io/cloud-builders/gcloud"
+  id: install-python
+  args: ["compute", "ssh", "${_USER_NAME}@${_INSTANCE_NAME}", 
+          "--command=cd /home/${_USER_NAME}/${_SOURCE_DIR}; chmod +x -R .; ./${_INSTALL_PY}", 
+          "--project=${_BUILDER_PROJECT}", "--zone=${_ZONE}", 
+          "--ssh-key-file=${_SSH_KEY_PATH}"]
+
+#set env in vm instance
+#- name: "gcr.io/cloud-builders/gcloud"
+#  id: get-env
+#  args: ["compute", "ssh", "${_USER_NAME}@${_INSTANCE_NAME}", 
+#          "--command=echo $$APPLICATION_CREDENTIALS; echo $$PROJECT_ID", 
+#          "--project=${_BUILDER_PROJECT}", "--zone=${_ZONE}", 
+#          "--ssh-key-file=${_SSH_KEY_PATH}"]
+
+# run pubsub to datastore python script
+- name: "gcr.io/cloud-builders/gcloud"
+  id: pubsub-to-datastore
+  args: ["compute", "ssh", "${_USER_NAME}@${_INSTANCE_NAME}", 
+          "--command=cd /home/${_USER_NAME}/${_SOURCE_DIR}/${_PUBSUB_DIR}; chmod +x -R .; python ./${_PUBSUB_TO_DATASTORE}", 
+          "--project=${_BUILDER_PROJECT}", "--zone=${_ZONE}", 
+          "--ssh-key-file=${_SSH_KEY_PATH}"]
+
+
+# run file_to_pubsub python script
+- name: "gcr.io/cloud-builders/gcloud"
+  id: file-to-pubsub
+  args: ["compute", "ssh", "${_USER_NAME}@${_INSTANCE_NAME}", 
+          "--command=cd /home/${_USER_NAME}/${_SOURCE_DIR}/${_PUBSUB_DIR}; chmod +x -R .; python ./${_FILE_TO_PUBSUB}", 
+          "--project=${_BUILDER_PROJECT}", "--zone=${_ZONE}", 
+          "--ssh-key-file=${_SSH_KEY_PATH}"]
+
+substitutions:
+    _BUILDER_PROJECT: mygcp-test-project-001
+    _ZONE: northamerica-northeast1-a
+    _DIR: .
+    _SOURCE_DIR: app/
+    _USER_NAME: sapcc
+    _INSTANCE_NAME: sapcc-test-instance
+    _DESTINATION_DIR: /home/sapcc
+    
+    # SSH keypath is dynamically generated from gcloud compute scp command
+    # SSH key is destroyed at the end of every build
+    _SSH_KEY_PATH: /builder/home/.ssh/google_compute_engine    
+    _KEY_DIR: .ssh
+    _KEY_FILE: secret.json
+    _INSTALL_PY: install_python.sh
+    _PUBSUB_DIR: sapcc-pubsub
+    _PUBSUB_TO_DATASTORE: pubsub-to-datastore.py
+    _FILE_TO_PUBSUB: file-to-pubsub.py
+
+#options:
+#  env:
+#    - APPLICATION_CREDENTIALS=${_DESTINATION_DIR}/${_KEY_DIR}/${_KEY_FILE}
+#    - PROJECT_ID=${_BUILDER_PROJECT}
